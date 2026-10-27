@@ -1,0 +1,12 @@
+.env
+.skelly_env
+__pycache__/
+*.pyc
+greeter-venv/
+venv/
+voices/
+fillers/
+SkellyUltra/
+*.wav
+*.onnx
+*.onnx.json
