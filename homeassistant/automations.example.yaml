@@ -1,0 +1,56 @@
+# Two automations. Replace the placeholders in <ANGLE_BRACKETS>.
+
+# 1) Doorbell press -> greeting, only while the toggle is on and inside the time window.
+alias: Doorbell greeting (Skelly)
+description: The Skelly greets trick-or-treaters when the doorbell is pressed
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.<YOUR_DOORBELL_VISITOR_SENSOR>
+    to: "on"            # without this it also fires when the sensor turns off again
+conditions: []
+actions:
+  - if:
+      - condition: state
+        entity_id: input_boolean.skelly_greeter
+        state: "on"
+      - condition: time
+        after: "17:00:00"
+        before: "21:30:00"
+    then:
+      - action: rest_command.skelly_greet
+        data:
+          camera: <YOUR_FRIGATE_CAMERA_NAME>
+mode: single
+---
+# 2) Schedule: toggle on at 5pm on Oct 31 only, off at 10pm every night.
+alias: Skelly greeter Halloween schedule
+description: On at 5pm on Oct 31, off at 10pm every night
+triggers:
+  - trigger: time
+    at: "17:00:00"
+    id: "on"
+  - trigger: time
+    at: "22:00:00"
+    id: "off"
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: "on"
+          - condition: template
+            value_template: "{{ now().month == 10 and now().day == 31 }}"
+        sequence:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.skelly_greeter
+      - conditions:
+          - condition: trigger
+            id: "off"
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.skelly_greeter
+mode: single
+# Note: the date check only looks at month and day, so this turns the greeter on again
+# every Oct 31. Disable the automation after the season if you don't want that.
+# The two times must agree with the time window in automation 1.

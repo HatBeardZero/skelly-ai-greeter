@@ -64,7 +64,7 @@ MODEL = env("CLAUDE_MODEL", "claude-haiku-5-5")
 
 PIPER_BIN = os.path.expanduser(env("PIPER_BIN", "~/greeter-venv/bin/piper"))
 PIPER_VOICE = os.path.expanduser(env("PIPER_VOICE", "~/voices/en_US-ryan-medium.onnx"))
-SOX_EFFECT = env("SOX_EFFECT", "gain -3 pitch -300 reverb 30 50 80")  # "" to disable
+SOX_EFFECT = env("SOX_EFFECT", "gain -3 pitch -600 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3")  # "" to disable
 FILLER_DIR = os.path.expanduser(env("FILLER_DIR", ""))  # optional dir of .wav stalling lines
 
 COOLDOWN = int(env("COOLDOWN_SECONDS", "20"))
@@ -88,7 +88,9 @@ SYSTEM = (
     "mention hair, faces, glasses, bodies, age, skin, or weight, and never guess what an outfit is "
     "supposed to be: say 'that hat' or 'that cape', not what it is meant to be. "
     "Never say a costume is confusing, unclear, or a mystery. "
-    "If there is no clear costume, just give a spooky welcome to your crypt. Do not "
+    "If there is no clear costume, just give a spooky welcome to your crypt, and never "
+    "comment on a missing costume or on what a visitor is not wearing: a visitor "
+    "without a costume is just as welcome. Do not "
     "mention the Halloween decorations around the house, such as the giant "
     "skeleton, bones, graveyard pieces, or yard figures. "
     "The menace is theatrical and playful, aimed at the night and the gloom, never at "
@@ -321,12 +323,17 @@ BANNED_WORDS = {
     "hair", "glasses", "spectacles", "face", "faces", "fat", "skinny", "ugly", "weird",
     # talking about what it can or can't see (sounds like it's watching)
     "visible", "invisible", "camera", "photo", "frame", "frames", "nobody",
+    "sight", "see", "sees", "seen", "seeing", "watching", "watched",
     # spooky is fine, but keep the menace off the visitors
     "kill", "killed", "murder", "suicide", "stab", "gun", "shoot",
     # foreign-language filler the model likes to add for certain costumes
     "amigo", "amiga", "amigos", "senor", "senorita", "hola", "ole", "gracias",
     "compadre", "muchacho", "muchacha", "bonjour", "ciao",
 }
+
+# Whole phrases the word list cannot express.
+BANNED_PHRASES = ("no costume", "not a single", "without a costume", "no disguise",
+                  "no one", "in sight", "out of sight")
 
 
 def line_ok(line):
@@ -335,6 +342,9 @@ def line_ok(line):
         return False
     words = re.findall(r"[a-z']+", text.lower())
     if not words or len(words) > 22:
+        return False
+    lowered = text.lower()
+    if any(p in lowered for p in BANNED_PHRASES):
         return False
     return not any(w in BANNED_WORDS for w in words)
 

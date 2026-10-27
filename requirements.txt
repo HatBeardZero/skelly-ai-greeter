@@ -1,0 +1,7 @@
+# For the greeter's virtualenv:
+#   python3 -m venv --system-site-packages ~/greeter-venv
+#   ~/greeter-venv/bin/pip install -r requirements.txt
+# aiohttp can come from apt (python3-aiohttp) via --system-site-packages, or from pip.
+aiohttp
+anthropic
+piper-tts

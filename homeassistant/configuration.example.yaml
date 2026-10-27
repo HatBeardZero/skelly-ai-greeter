@@ -1,0 +1,12 @@
+# Add to configuration.yaml (keep ONE top-level rest_command: key; merge if you have one).
+# Then Settings -> Developer tools -> YAML -> Check configuration, and restart.
+#
+# Create the on/off switch in the UI (Settings -> Devices & services -> Helpers ->
+# Create helper -> Toggle) named "Skelly greeter". Its entity is input_boolean.skelly_greeter.
+rest_command:
+  skelly_greet:
+    url: "http://<PI_IP_ADDRESS>:8766/greet"
+    method: post
+    content_type: "application/json"
+    payload: '{"camera": "{{ camera }}"}'
+    timeout: 5

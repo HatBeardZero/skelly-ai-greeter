@@ -1,12 +1,16 @@
+# secrets and local settings
 .env
 .skelly_env
+*.env
+# generated audio and debug frames
+*.wav
+last_snapshot*.jpg
+# python
 __pycache__/
 *.pyc
+.venv/
 greeter-venv/
-venv/
+# voices are large downloads
 voices/
-fillers/
-SkellyUltra/
-*.wav
 *.onnx
 *.onnx.json
