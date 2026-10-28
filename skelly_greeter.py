@@ -179,6 +179,7 @@ def get_persona(name=None):
                 "system": " ".join(data["tone"].split()) + " " + COMMON_RULES,
                 "fallbacks": fallbacks,
                 "filter": bool(data.get("filter", True)),
+                "pun_chance": float(data.get("pun_chance", 0)),
             }
             if name and candidate != name:
                 print(f"Persona {name!r} not found, using {candidate!r}")
@@ -319,6 +320,10 @@ async def make_line(jpgs, persona):
         prompt = "Greet them."
     # A random structural nudge each press, so lines stop sharing the same opening.
     prompt += "\n\nFor this line, " + random.choice(OPENING_STYLES) + " Do not open with 'Ah'."
+    if random.random() < persona["pun_chance"]:
+        prompt += ("\n\nThis time, make the line a skeleton pun on bones, ribs, skulls, "
+                   "having no body or no heart, in the spirit of a cheerful skeleton "
+                   "who cannot help himself, delivered with a straight face.")
     used = list(recent[persona["name"]])
     if used:
         prompt += ("\n\nLines you already used recently. Do not repeat their wording, "
