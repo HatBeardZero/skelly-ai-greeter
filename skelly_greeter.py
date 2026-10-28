@@ -15,7 +15,9 @@ environment (see .env.example).
 """
 import asyncio
 import base64
+import collections
 import glob
+import json
 import os
 import random
 import re
@@ -23,6 +25,7 @@ import shlex
 import sys
 import tempfile
 import time
+import tomllib
 import wave
 
 import aiohttp
@@ -74,49 +77,116 @@ SNAPSHOT_GAP = float(env("SNAPSHOT_GAP", "1"))             # seconds between tho
 KEEPALIVE_SECONDS = int(env("KEEPALIVE_SECONDS", "20"))
 PORT = int(env("PORT", "8766"))
 
-SYSTEM = (
-    "You are the voice of an ancient, dryly witty skeleton haunting the front door "
-    "on Halloween night, greeting trick-or-treaters. Your tone is spooky, ominous and "
-    "theatrical, with a dark sense of humor, like a classic horror host. You are not "
-    "cheery or bubbly: no exclamation marks, no 'hello there', no 'welcome, friends'. "
-    "Draw on the grave, the crypt, the dark, centuries of waiting, and rattling bones. "
-    "Use ellipses for slow, dramatic pauses. "
-    "Look at the image(s) and give ONE short spoken line, 15 words or fewer. "
+# Rules every persona shares. The persona file supplies the voice and tone; this
+# keeps the visitor-safety rules in one place so a new persona cannot drop them.
+COMMON_RULES = (
+    "Look at the image(s) and give ONE short spoken line. Hard limit: 15 words in total, sting included, so be brief. "
     "Only mention a costume, mask, hat, or prop that a visitor is wearing or carrying, "
-    "if one is clearly visible, and acknowledge it with dry, ghoulish approval, and pick "
+    "if one is clearly visible, and pick "
     "just ONE item, the most obvious one. Never "
     "mention hair, faces, glasses, bodies, age, skin, or weight, and never guess what an outfit is "
     "supposed to be: say 'that hat' or 'that cape', not what it is meant to be. "
     "Never say a costume is confusing, unclear, or a mystery. "
-    "If there is no clear costume, just give a spooky welcome to your crypt, and never "
+    "If there is no clear costume, just give your usual welcome, and never "
     "comment on a missing costume or on what a visitor is not wearing: a visitor "
     "without a costume is just as welcome. Do not "
-    "mention the Halloween decorations around the house, such as the giant "
+    "mention the decorations around the entrance, such as the giant "
     "skeleton, bones, graveyard pieces, or yard figures. "
     "The menace is theatrical and playful, aimed at the night and the gloom, never at "
     "the visitors: never threaten, curse, chase, or hurt a visitor, and no gore, "
-    "weapons, or real-world violence. Keep it spooky fun, not truly frightening for "
-    "young children. Use plain English only: "
+    "weapons, or real-world violence. Never claim to know anything personal about a visitor, such as their name "
+    "or who they are. Use plain English only: "
     "no foreign words (never say 'amigo' or 'hola'), no accents, and no stereotypes about any culture or "
     "nationality, even if a costume suggests one. If several people are in the "
     "photo, address the whole group (for example, 'what a procession of the brave') and mention "
     "at most one standout costume; never single out, rank, or compare people, and "
     "never guess who is a child or an adult. Never say what you can or "
     "cannot see: no mention of cameras, photos, frames, or whether anyone is visible. "
-    "If nobody is in view, just give the same spooky welcome. "
-    "Examples of the tone (never reuse them word for word, vary every time): "
-    "'Who dares knock upon my crypt... splendid cape. Take your candy and linger not.' "
-    "'Another year of waiting in the dark... and here you are. Marvelous hat.' "
-    "'The grave was quiet tonight... until you arrived. Come, the candy awaits.' "
-    "'Ah... a brave procession. My bones rattle with approval.' "
+    "If nobody is in view, just give your usual welcome. "
     "Output only the line, no quotes."
 )
 
-FALLBACKS = [
-    "Who dares knock upon my crypt... Take your candy and linger not.",
-    "Ah... the brave approach. The candy bowl awaits you.",
-    "I have waited in the dark all year... for you.",
-]
+OPENING_STYLES = (
+    "open with the item or costume itself.",
+    "open with a remark about the dark, the cold, or the hour.",
+    "open with a span of time, such as years, centuries or a single night.",
+    "open with a short one-word reaction that is not 'Ah'.",
+    "open with the crypt, the grave, or something underground.",
+    "open with a flat, dry statement of fact.",
+    "open with a question.",
+    "open with the visitors, as a group, arriving.",
+)
+
+
+# ---------- recent lines ----------
+# Every accepted line is appended to LINES_FILE (one JSON object per line) and the
+# latest few per persona are shown to the model so it stops repeating itself.
+LINES_FILE = env("LINES_FILE", os.path.expanduser("~/.skelly_lines.jsonl"))
+RECENT_LINES = int(env("RECENT_LINES", "8"))
+recent = collections.defaultdict(lambda: collections.deque(maxlen=RECENT_LINES))
+
+
+def load_recent():
+    try:
+        with open(LINES_FILE) as fh:
+            for row in fh.readlines()[-400:]:
+                try:
+                    r = json.loads(row)
+                    recent[r["persona"]].append(r["line"])
+                except (ValueError, KeyError):
+                    continue
+    except OSError:
+        pass
+
+
+def remember(persona, line, spoken):
+    recent[persona].append(line)
+    try:
+        with open(LINES_FILE, "a") as fh:
+            fh.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                 "persona": persona, "spoken": spoken, "line": line}) + "\n")
+    except OSError as e:
+        print("Could not log line:", e)
+
+
+# ---------- personas ----------
+# Each file in personas/ is a voice: a `tone` prompt and canned `fallbacks`.
+# Pick one with PERSONA in ~/.skelly_env (hard setting), or per doorbell press by
+# sending {"persona": "exhibition"} from Home Assistant (routing rule).
+PERSONA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "personas")
+DEFAULT_PERSONA = env("PERSONA", "crypt")
+_personas = {}
+# Comparison aid: these personas also write a line from the same frames, which is
+# only logged, never spoken. Off by default; e.g. SHADOW_PERSONAS=exhibition
+SHADOW_PERSONAS = [n.strip() for n in env("SHADOW_PERSONAS", "").split(",") if n.strip()]
+
+
+def get_persona(name=None):
+    """Return {'system': ..., 'fallbacks': [...], 'name': ...}; unknown names use the default."""
+    for candidate in (name, DEFAULT_PERSONA, "crypt"):
+        if not candidate or not re.fullmatch(r"[a-z0-9_-]+", str(candidate)):
+            continue
+        if candidate in _personas:
+            return _personas[candidate]
+        path = os.path.join(PERSONA_DIR, f"{candidate}.toml")
+        try:
+            with open(path, "rb") as fh:
+                data = tomllib.load(fh)
+            fallbacks = [str(x) for x in data.get("fallbacks", [])] or [
+                "Who dares approach... come closer."]
+            _personas[candidate] = {
+                "name": candidate,
+                "system": " ".join(data["tone"].split()) + " " + COMMON_RULES,
+                "fallbacks": fallbacks,
+                "filter": bool(data.get("filter", True)),
+            }
+            if name and candidate != name:
+                print(f"Persona {name!r} not found, using {candidate!r}")
+            return _personas[candidate]
+        except (OSError, KeyError, tomllib.TOMLDecodeError) as e:
+            print(f"Could not load persona {candidate!r}: {e}")
+    raise RuntimeError("no usable persona in " + PERSONA_DIR)
+
 
 client = anthropic.AsyncAnthropic()
 lock = asyncio.Lock()
@@ -235,7 +305,7 @@ async def snapshots(session, camera):
     return frames
 
 
-async def make_line(jpgs):
+async def make_line(jpgs, persona):
     images = [
         {"type": "image", "source": {
             "type": "base64", "media_type": "image/jpeg",
@@ -247,10 +317,17 @@ async def make_line(jpgs):
                   "Use whichever frame shows the visitors best. Greet them.")
     else:
         prompt = "Greet them."
+    # A random structural nudge each press, so lines stop sharing the same opening.
+    prompt += "\n\nFor this line, " + random.choice(OPENING_STYLES) + " Do not open with 'Ah'."
+    used = list(recent[persona["name"]])
+    if used:
+        prompt += ("\n\nLines you already used recently. Do not repeat their wording, "
+                   "openings, jokes or sentence shape; find a fresh angle:\n"
+                   + "\n".join(f"- {u}" for u in used))
     params = dict(
         model=MODEL,
         max_tokens=300,  # headroom in case the model emits a thinking block first
-        system=SYSTEM,
+        system=persona["system"],
         messages=[{
             "role": "user",
             "content": images + [{"type": "text", "text": prompt}],
@@ -258,7 +335,7 @@ async def make_line(jpgs):
     )
     # Thinking only adds latency for a one-line greeting. Haiku 5.5 allows
     # thinking disabled at high effort or below (its default effort is medium).
-    extra = {"thinking": {"type": "disabled"}}
+    extra = {"thinking": {"type": env("THINKING_MODE", "disabled")}}  # Sonnet 5.5 wants between_tools
     effort = env("CLAUDE_EFFORT", "")  # optional: low | medium | high
     if effort:
         extra["output_config"] = {"effort": effort}
@@ -323,7 +400,6 @@ BANNED_WORDS = {
     "hair", "glasses", "spectacles", "face", "faces", "fat", "skinny", "ugly", "weird",
     # talking about what it can or can't see (sounds like it's watching)
     "visible", "invisible", "camera", "photo", "frame", "frames", "nobody",
-    "sight", "see", "sees", "seen", "seeing", "watching", "watched",
     # spooky is fine, but keep the menace off the visitors
     "kill", "killed", "murder", "suicide", "stab", "gun", "shoot",
     # foreign-language filler the model likes to add for certain costumes
@@ -333,10 +409,17 @@ BANNED_WORDS = {
 
 # Whole phrases the word list cannot express.
 BANNED_PHRASES = ("no costume", "not a single", "without a costume", "no disguise",
-                  "no one", "in sight", "out of sight")
+                  "no one", "in sight", "out of sight",
+                  # sounding like it is watching the visitor (plain "seen"/"see" are fine)
+                  "i see ", "i can see", "i could see", "can see you", "see you standing",
+                  "see you there", "i have seen you", "i've seen you", "watching you",
+                  "watched you", "watching from", "been watching")
 
 
-def line_ok(line):
+def line_ok(line, persona=None):
+    if persona is not None and not persona.get("filter", True):
+        # Persona opted out of the word checks: only reject empty or run-on lines.
+        return 0 < len(line.split()) <= 40
     text = line.replace("\u2019", "'").replace("\u2018", "'").replace("\u201c", '"').replace("\u201d", '"')
     if not text.isascii():  # accents mean foreign words (senor, ole, etc.)
         return False
@@ -351,7 +434,19 @@ def line_ok(line):
 
 # ---------- main flow ----------
 
-async def run(camera):
+async def shadow_line(frames, name):
+    try:
+        p = get_persona(name)
+        line = await make_line(frames, p)
+        if line_ok(line, p):
+            remember(p["name"], line, False)
+        print(f"Shadow ({p['name']}, not spoken, {'ok' if line_ok(line, p) else 'would be rejected'}):", line)
+    except Exception as e:
+        print(f"Shadow persona {name!r} failed:", e)
+
+
+async def run(camera, persona_name=None):
+    persona = get_persona(persona_name)
     async with lock:
         t0 = time.time()
         async with aiohttp.ClientSession() as session:
@@ -372,23 +467,29 @@ async def run(camera):
                 await asyncio.sleep(max(0, SNAPSHOT_DELAY - (time.time() - t0)))
                 line = None
                 frames = None
-                for attempt in range(2):
+                for attempt in range(3):
                     try:
                         # Capture once; a retry reuses the same frames (no extra delay)
                         if frames is None:
                             frames = await snapshots(session, camera)
                             print(f"[timing] {len(frames)} frame(s) captured {time.time() - t0:.1f}s")
-                        candidate = await make_line(frames)
+                        if attempt == 0:
+                            for name in SHADOW_PERSONAS:
+                                if name != persona["name"]:
+                                    asyncio.create_task(shadow_line(frames, name))
+                        candidate = await make_line(frames, persona)
                     except Exception as e:
                         print("AI step failed, using fallback:", e)
                         break
-                    if line_ok(candidate):
+                    if line_ok(candidate, persona):
                         line = candidate
                         break
-                    print("Rejected line, trying again:" if attempt == 0 else "Rejected line:", candidate)
+                    print("Rejected line, trying again:" if attempt < 2 else "Rejected line:", candidate)
                 if line is None:
-                    line = random.choice(FALLBACKS)
-                print("Skelly says:", line)
+                    line = random.choice(persona["fallbacks"])
+                else:
+                    remember(persona["name"], line, True)
+                print(f"Skelly says ({persona['name']}):", line)
                 print(f"[timing] line ready {time.time() - t0:.1f}s after trigger")
 
                 with tempfile.TemporaryDirectory() as tmp:
@@ -405,6 +506,41 @@ async def run(camera):
                 print("greet failed:", e)
 
 
+# Optional: POSTed when the greeter is ready to greet again (speech done and cooldown
+# over), so Home Assistant can undo a "recharging" light change. Leave unset to disable.
+READY_WEBHOOK_URL = env("READY_WEBHOOK_URL", "")
+
+
+def is_ready():
+    return not lock.locked() and time.time() - last_run >= COOLDOWN
+
+
+async def notify_ready():
+    if not READY_WEBHOOK_URL:
+        return
+    await asyncio.sleep(max(0, last_run + COOLDOWN - time.time()))
+    if not is_ready():  # a newer press is running; its own run will notify
+        return
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(READY_WEBHOOK_URL, json={"ready": True},
+                                    timeout=aiohttp.ClientTimeout(total=5)) as r:
+                print(f"[ready] webhook -> {r.status}")
+    except Exception as e:
+        print("Ready webhook failed:", e)
+
+
+async def run_then_notify(camera, persona_name):
+    try:
+        await run(camera, persona_name)
+    finally:
+        await notify_ready()
+
+
+async def status(request):
+    return web.json_response({"ready": is_ready()})
+
+
 async def greet(request):
     global last_run
     try:
@@ -414,7 +550,7 @@ async def greet(request):
     if lock.locked() or time.time() - last_run < COOLDOWN:
         return web.json_response({"status": "skipped"})
     last_run = time.time()
-    asyncio.create_task(run(data.get("camera", DEFAULT_CAMERA)))
+    asyncio.create_task(run_then_notify(data.get("camera", DEFAULT_CAMERA), data.get("persona")))
     return web.json_response({"status": "ok"})
 
 
@@ -439,9 +575,10 @@ async def keepalive(app):
 
 
 app = web.Application()
-app.add_routes([web.post("/greet", greet)])
+app.add_routes([web.post("/greet", greet), web.get("/status", status)])
 app.cleanup_ctx.append(keepalive)
 
 if __name__ == "__main__":
+    load_recent()
     load_voice()
     web.run_app(app, port=PORT)

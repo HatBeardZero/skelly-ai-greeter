@@ -8,5 +8,6 @@ rest_command:
     url: "http://<PI_IP_ADDRESS>:8766/greet"
     method: post
     content_type: "application/json"
-    payload: '{"camera": "{{ camera }}"}'
+    # "persona" is optional; leave it out (or empty) to use PERSONA from ~/.skelly_env.
+    payload: '{"camera": "{{ camera }}", "persona": "{{ persona | default("") }}"}'
     timeout: 5

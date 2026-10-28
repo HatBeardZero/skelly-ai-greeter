@@ -1,0 +1,57 @@
+# Optional: tint a porch light while the Skelly is "recharging", restore it when ready.
+# light.craft_room is the Hue porch bulb (renamed "Front door"; HA keeps the old entity id).
+#
+# On the Pi, add to ~/.skelly_env and restart the greeter:
+#   READY_WEBHOOK_URL=http://<HA_LAN_IP>:8123/api/webhook/<RANDOM_WEBHOOK_ID>
+#
+# The tint waits 3 seconds on purpose: the greeter grabs its camera frames in the first
+# second, and a colour change before that would tint what Claude sees. Keep the tint
+# subtle and don't dim the bulb, or the camera may switch to night vision.
+
+# 1) Replace the action in your doorbell automation with these steps.
+#    Only a greeting that actually started tints the light (a skipped press does not).
+actions:
+  - if:
+      - condition: state
+        entity_id: input_boolean.skelly_greeter
+        state: "on"
+      - condition: time
+        after: "17:00:00"
+        before: "21:30:00"
+    then:
+      - action: rest_command.skelly_greet
+        data:
+          camera: <YOUR_FRIGATE_CAMERA_NAME>
+        response_variable: greet
+      - if:
+          - condition: template
+            value_template: "{{ greet.content.status == 'ok' }}"
+        then:
+          - delay: "00:00:03"
+          - action: scene.create
+            data:
+              scene_id: skelly_before_recharge
+              snapshot_entities:
+                - light.craft_room
+          - action: light.turn_on
+            target:
+              entity_id: light.craft_room
+            data:
+              hs_color: [20, 70]     # a slight warm-orange shift; adjust to taste
+              transition: 1
+mode: single
+---
+# 2) The greeter calls this when it is ready again; put the light back.
+alias: Skelly ready (restore light)
+triggers:
+  - trigger: webhook
+    webhook_id: <RANDOM_WEBHOOK_ID>
+    allowed_methods: [POST]
+    local_only: true    # the greeter calls HA over the LAN
+actions:
+  - action: scene.turn_on
+    target:
+      entity_id: scene.skelly_before_recharge
+    data:
+      transition: 1
+mode: restart
