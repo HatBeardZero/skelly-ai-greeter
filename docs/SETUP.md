@@ -110,15 +110,15 @@ Test the voice and the spooky effect through the Skelly:
 
 ```
 echo "Welcome, brave souls." | ~/greeter-venv/bin/piper -m ~/voices/en_US-ryan-medium.onnx -f /tmp/p.wav
-sox /tmp/p.wav /tmp/p2.wav gain -3 pitch -600 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3
+sox /tmp/p.wav /tmp/p2.wav gain -3 pitch -450 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3
 curl -X POST localhost:8765/classic/play -F "file=@/tmp/p2.wav"
 ```
 
-The default chain is `gain -3 pitch -600 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3`.
+The default chain is `gain -3 pitch -450 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3`.
 What we learned tuning it on the Skelly's small speaker (judge by ear, on the speaker, not
 on a laptop):
 
-- **Pitch:** `pitch` is in cents. -600 (half an octave down) stayed easy to understand.
+- **Pitch:** `pitch` is in cents. -450 sounded best on the Skelly outdoors. -600 was also clear.
   -800 sounded deeper on a laptop but was hard to understand on the Skelly.
 - **Heavy overdrive and a fast tremolo growl** (overdrive 15 or more, tremolo 40 Hz or
   more) sounded bad and clipped. Keep the grit light.

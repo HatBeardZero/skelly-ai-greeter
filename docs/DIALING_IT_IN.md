@@ -163,7 +163,7 @@ presence boost), and `SET=4` a pitch ladder where only the pitch changes.
 What we learned:
 
 - **`pitch -800`** sounded deeper on a laptop but was hard to understand on the Skelly.
-  **`pitch -600`** was clear. The speaker cannot play very low frequencies, so going lower
+  **`pitch -600`** was clear and **`pitch -450`** sounded best outdoors. The speaker cannot play very low frequencies, so going lower
   mostly made the voice thinner and muddier, not deeper.
 - **Heavy overdrive and a fast tremolo growl** (overdrive 15 or more, tremolo 40 Hz or more)
   sounded bad and clipped. Keep grit light.
@@ -180,7 +180,7 @@ What we learned:
 **Put the chain in `~/.skelly_env` in double quotes:**
 
 ```
-SOX_EFFECT="gain -3 pitch -600 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3"
+SOX_EFFECT="gain -3 pitch -450 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3"
 ```
 
 Unquoted, systemd still reads it, but `source ~/.skelly_env` in a shell fails with
@@ -272,7 +272,7 @@ Then use `HALLOWEEN_NIGHT_CHECKLIST.md`.
 | "Playing" but silent | Speaker link down, dummy sink; or mode button not on Bluetooth | Check `pactl list sinks short`; set the mode button; restart the bridge |
 | Works, then goes silent after minutes | The Skelly drops the speaker link when BLE is idle | The greeter's keepalive (`KEEPALIVE_SECONDS`) |
 | Voice sounds high or has no effect | `SOX_EFFECT` unquoted so empty in a shell, or an old value in the unit file | Quote it; keep it in one place; verify the running service |
-| Voice hard to understand | Pitch too low, heavy overdrive, too much reverb | Pitch -600, light grit, less reverb, `norm -3` |
+| Voice hard to understand | Pitch too low, heavy overdrive, too much reverb | Pitch -450, light grit, less reverb, `norm -3` |
 | Long silence before the AI line | Stalling line too short, slow snapshot waits | Longer fillers, lower `SNAPSHOT_DELAY` and `SNAPSHOT_GAP` |
 | Greeter exits at start | A required setting is missing from `~/.skelly_env` | Add `SKELLY_BLE_ADDR`, `SKELLY_CLASSIC_MAC`, `FRIGATE_URL`, `ANTHROPIC_API_KEY` |
 | Only canned lines | The Claude call failed | Check the key and credit balance; read the log for `AI step failed` |

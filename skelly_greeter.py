@@ -67,7 +67,7 @@ MODEL = env("CLAUDE_MODEL", "claude-haiku-5-5")
 
 PIPER_BIN = os.path.expanduser(env("PIPER_BIN", "~/greeter-venv/bin/piper"))
 PIPER_VOICE = os.path.expanduser(env("PIPER_VOICE", "~/voices/en_US-ryan-medium.onnx"))
-SOX_EFFECT = env("SOX_EFFECT", "gain -3 pitch -600 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3")  # "" to disable
+SOX_EFFECT = env("SOX_EFFECT", "gain -3 pitch -450 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3")  # "" to disable
 FILLER_DIR = os.path.expanduser(env("FILLER_DIR", ""))  # optional dir of .wav stalling lines
 
 COOLDOWN = int(env("COOLDOWN_SECONDS", "20"))

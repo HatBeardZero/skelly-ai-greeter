@@ -4,7 +4,7 @@
 set -euo pipefail
 VOICE="${PIPER_VOICE:-$HOME/voices/en_US-ryan-medium.onnx}"
 PIPER="${PIPER_BIN:-$HOME/greeter-venv/bin/piper}"
-EFFECT="${SOX_EFFECT:-gain -3 pitch -600 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3}"
+EFFECT="${SOX_EFFECT:-gain -3 pitch -450 bass 6 overdrive 6 tremolo 7 30 reverb 50 50 80 norm -3}"
 OUT="${FILLER_DIR:-$HOME/fillers}"
 mkdir -p "$OUT"
 i=0
