@@ -11,6 +11,12 @@
       porch light on. Trigger three or more times from where a visitor stands. Can you
       understand it over street noise? Does audio break up? Does the speaker link survive
       between triggers?
+- [ ] **Idle test.** Leave everything untouched for an hour or more, then press the real
+      doorbell (or run `rest_command.skelly_greet` from Home Assistant). Tests made while the
+      Pi is busy can pass even when a press after a long quiet spell fails. If it fails with
+      `Client error occurred when calling resource`, check Wi-Fi power save (next item).
+- [ ] If the Pi is on Wi-Fi, `iw dev wlan0 get power_save` prints `Power save: off`
+      (see docs/SETUP.md, section 1).
 - [ ] Test the schedule's off branch: toggle on, set the "off" trigger two minutes ahead,
       confirm it switches the toggle off, set it back.
 - [ ] Reboot test: `sudo reboot`, wait two minutes, confirm the Skelly's speaker sink is back.
@@ -67,6 +73,7 @@ seconds after the press. `journalctl --user-unit skelly-greeter -f` shows it liv
 | Symptom | Check | Fix |
 | --- | --- | --- |
 | Press does nothing | Automation traces: toggle on? time inside the window? | Switch the toggle on or fix the time condition |
+| Trace says `Client error occurred when calling resource`, and the Pi's log shows no press | Pi on Wi-Fi with power save on, so it does not answer HA | `sudo iw dev wlan0 set power_save off`, then make it permanent (docs/SETUP.md, section 1) |
 | Trace shows the action ran, no sound | `pactl list sinks short` has no Skelly line | Wait 30 s for the auto reconnect, else restart both services |
 | Log says it played, silence | Mode button not on Bluetooth, or default sink is `auto_null` | Set the mode button, restart the bridge |
 | Only canned lines | `journalctl ... -n 30` shows `AI step failed` | Check the API key and credit balance |

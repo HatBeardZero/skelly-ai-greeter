@@ -277,3 +277,4 @@ Then use `HALLOWEEN_NIGHT_CHECKLIST.md`.
 | Greeter exits at start | A required setting is missing from `~/.skelly_env` | Add `SKELLY_BLE_ADDR`, `SKELLY_CLASSIC_MAC`, `FRIGATE_URL`, `ANTHROPIC_API_KEY` |
 | Only canned lines | The Claude call failed | Check the key and credit balance; read the log for `AI step failed` |
 | Press does nothing | Toggle off or outside the time window | Check the toggle and the automation trace |
+| Trace shows `Client error occurred when calling resource`, nothing in the Pi's log | Wi-Fi power save is on, so the Pi sleeps and misses HA's call | Turn power save off (docs/SETUP.md, section 1) |

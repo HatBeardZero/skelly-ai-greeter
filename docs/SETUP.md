@@ -10,8 +10,21 @@ Trixie), with Home Assistant OS and Frigate on other machines. Adapt as needed.
 2. Put the Pi on the **same network as Home Assistant and Frigate**, not a guest network
    (guest networks usually isolate devices from each other).
 3. Give it a DHCP reservation in your router.
-4. Update, then reboot: `sudo apt update && sudo apt full-upgrade -y`.
-5. Check power and audio: `vcgencmd get_throttled` should print `0x0`, and
+4. **If the Pi is on Wi-Fi, turn off Wi-Fi power save.** With it on, a headless Pi can stop
+   answering when Home Assistant calls it after it has been idle for a while. The call fails
+   with `Client error occurred when calling resource` and the Pi's log shows nothing.
+   Turn it off for now and make it permanent (use your own connection name; list them with
+   `nmcli connection show`):
+
+   ```
+   sudo iw dev wlan0 set power_save off
+   sudo nmcli connection modify "<your Wi-Fi connection>" 802-11-wireless.powersave 2
+   iw dev wlan0 get power_save    # should print: Power save: off
+   ```
+
+   Ethernet does not have this problem.
+5. Update, then reboot: `sudo apt update && sudo apt full-upgrade -y`.
+6. Check power and audio: `vcgencmd get_throttled` should print `0x0`, and
    `pw-play --version` should print a version. A weak power supply causes odd USB and
    Bluetooth problems; use a proper 5 V / 5 A supply on a Pi 5.
 
