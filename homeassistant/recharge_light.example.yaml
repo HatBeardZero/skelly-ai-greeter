@@ -7,6 +7,11 @@
 # The tint waits 3 seconds on purpose: the greeter grabs its camera frames in the first
 # second, and a colour change before that would tint what Claude sees. Keep the tint
 # subtle and don't dim the bulb, or the camera may switch to night vision.
+#
+# Needs one helper: Settings > Devices & services > Helpers > Toggle, named
+# "Skelly tinted" (input_boolean.skelly_tinted). It records that a tint is in progress, so
+# the restore step never replays an old or "off" snapshot. If the light is off when a
+# greeting starts, the tint is skipped and the light is left alone.
 
 # 1) Replace the action in your doorbell automation with these steps.
 #    Only a greeting that actually started tints the light (a skipped press does not).
@@ -28,17 +33,27 @@ actions:
             value_template: "{{ greet.content.status == 'ok' }}"
         then:
           - delay: "00:00:03"
-          - action: scene.create
-            data:
-              scene_id: skelly_before_recharge
-              snapshot_entities:
-                - light.craft_room
-          - action: light.turn_on
-            target:
-              entity_id: light.craft_room
-            data:
-              hs_color: [20, 70]     # a slight warm-orange shift; adjust to taste
-              transition: 1
+          # Only snapshot and tint a light that is on. A snapshot of an off light would
+          # be restored as "off", and the tint would switch an off light on.
+          - if:
+              - condition: state
+                entity_id: light.craft_room
+                state: "on"
+            then:
+              - action: scene.create
+                data:
+                  scene_id: skelly_before_recharge
+                  snapshot_entities:
+                    - light.craft_room
+              - action: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.skelly_tinted
+              - action: light.turn_on
+                target:
+                  entity_id: light.craft_room
+                data:
+                  hs_color: [20, 70]     # a slight warm-orange shift; adjust to taste
+                  transition: 1
 mode: single
 ---
 # 2) The greeter calls this when it is ready again; put the light back.
@@ -48,10 +63,17 @@ triggers:
     webhook_id: <RANDOM_WEBHOOK_ID>
     allowed_methods: [POST]
     local_only: true    # the greeter calls HA over the LAN
+conditions:
+  - condition: state          # only undo a tint this setup made
+    entity_id: input_boolean.skelly_tinted
+    state: "on"
 actions:
   - action: scene.turn_on
     target:
       entity_id: scene.skelly_before_recharge
     data:
       transition: 1
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.skelly_tinted
 mode: restart
