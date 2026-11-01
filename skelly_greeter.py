@@ -119,21 +119,68 @@ OPENING_STYLES = (
 
 
 # ---------- recent lines ----------
-# Every accepted line is appended to LINES_FILE (one JSON object per line) and the
-# latest few per persona are shown to the model so it stops repeating itself.
+# Every accepted line is appended to LINES_FILE (one JSON object per line). The model is
+# shown the latest RECENT_LINES per persona word for word, plus the phrases and openers
+# that keep turning up across the last HISTORY_LINES, so a catchphrase cannot creep in
+# just because it was last used a dozen lines ago.
 LINES_FILE = env("LINES_FILE", os.path.expanduser("~/.skelly_lines.jsonl"))
-RECENT_LINES = int(env("RECENT_LINES", "8"))
-recent = collections.defaultdict(lambda: collections.deque(maxlen=RECENT_LINES))
+RECENT_LINES = int(env("RECENT_LINES", "12"))
+HISTORY_LINES = int(env("HISTORY_LINES", "80"))
+recent = collections.defaultdict(lambda: collections.deque(maxlen=HISTORY_LINES))
+
+# Words too common to count as a repeated phrase on their own.
+_STOP = frozenset(
+    "a an the and or but of to in on at by for with from as is are was were be been it its it's "
+    "that this these those i me my you your yours we us our they them their he she his her "
+    "have has had do does did not no so than then there here will would could can may might "
+    "all one every more most what who how when where which".split())
+
+
+def overused(lines, top=8):
+    """Phrases and openers that recur across `lines`, for the 'avoid these' prompt note."""
+    if len(lines) < 3:
+        return [], []
+    counts = collections.Counter()
+    openers = collections.Counter()
+    for line in lines:
+        words = re.findall(r"[a-z']+", line.lower())
+        grams = set()
+        for n in (1, 2, 3):
+            for i in range(len(words) - n + 1):
+                g = words[i:i + n]
+                if g[0] in _STOP or g[-1] in _STOP:
+                    continue
+                grams.add(" ".join(g))
+        counts.update(grams)
+        if len(words) >= 2:
+            openers[" ".join(words[:2])] += 1
+    floor = max(3, len(lines) // 6)  # a phrase needs to turn up in about one line in six
+    found = [(c, g) for g, c in counts.items() if c >= (floor if " " in g else floor + 1)]
+    found.sort(key=lambda x: (-x[0] * (1 + x[1].count(" ") * 0.5), x[1]))
+    picked = []
+    for c, g in found:
+        if any(g in q or q in g for q in picked):
+            continue
+        picked.append(g)
+        if len(picked) == top:
+            break
+    opened = [o for o, c in openers.most_common(4) if c >= 2 and not all(w in _STOP for w in o.split())]
+    return picked, opened
 
 
 def load_recent():
+    """Reload the lines from the last HISTORY_HOURS, so one night's catchphrases do not
+    follow the greeter into the next night (or into test runs from days before)."""
+    cutoff = time.time() - float(env("HISTORY_HOURS", "12")) * 3600
     try:
         with open(LINES_FILE) as fh:
             for row in fh.readlines()[-400:]:
                 try:
                     r = json.loads(row)
-                    recent[r["persona"]].append(r["line"])
-                except (ValueError, KeyError):
+                    when = time.mktime(time.strptime(r["ts"], "%Y-%m-%d %H:%M:%S"))
+                    if when >= cutoff:
+                        recent[r["persona"]].append(r["line"])
+                except (ValueError, KeyError, OverflowError):
                     continue
     except OSError:
         pass
@@ -324,11 +371,19 @@ async def make_line(jpgs, persona):
         prompt += ("\n\nThis time, make the line a skeleton pun on bones, ribs, skulls, "
                    "having no body or no heart, in the spirit of a cheerful skeleton "
                    "who cannot help himself, delivered with a straight face.")
-    used = list(recent[persona["name"]])
+    history = list(recent[persona["name"]])
+    used = history[-RECENT_LINES:]
     if used:
         prompt += ("\n\nLines you already used recently. Do not repeat their wording, "
                    "openings, jokes or sentence shape; find a fresh angle:\n"
                    + "\n".join(f"- {u}" for u in used))
+    phrases, openers = overused(history)
+    if phrases:
+        prompt += ("\n\nThese words and phrases have turned up in too many of your lines this "
+                   "night (naming something a visitor really is wearing is still fine). Do not use them "
+                   "in this line: " + ", ".join(f"'{p}'" for p in phrases) + ".")
+    if openers:
+        prompt += ("\nDo not start this line with: " + ", ".join(f"'{o}...'" for o in openers) + ".")
     params = dict(
         model=MODEL,
         max_tokens=300,  # headroom in case the model emits a thinking block first
